@@ -3,7 +3,7 @@ import { GoogleLogin } from '@react-oauth/google'
 import { jwtDecode } from 'jwt-decode'
 import './App.css'
 
-const API_BASE = 'https://prompt-enhancer-backend-vfkc.onrender.com/api'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api'
 
 const LANGUAGES = [
   { name: 'English', code: 'en-US' },
