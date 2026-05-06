@@ -3,7 +3,8 @@
   "displayName": "AI Prompt Enhancer",
   "description": "Enhances your prompts directly within Cursor using your AI backend.",
   "version": "1.0.0",
-  "publisher": "your-name",
+  "publisher": "prompt-enhancer-ai",
+  "icon": "logo.png",
   "engines": {
     "vscode": "^1.80.0"
   },

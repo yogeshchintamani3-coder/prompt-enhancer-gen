@@ -15,7 +15,11 @@
     "https://prompt-enhancer-backend-vfkc.onrender.com/*"
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon128.png"
+  },
+  "icons": {
+    "128": "icons/icon128.png"
   },
   "content_scripts": [
     {
