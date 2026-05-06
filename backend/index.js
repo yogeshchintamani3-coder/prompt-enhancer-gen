@@ -87,7 +87,7 @@ app.post('/api/enhance-prompt', async (req, res) => {
             Original Requirement: ${prompt}
             ${image ? 'NOTE: I have also attached a screenshot for reference. Please analyze it carefully to understand the UI layout or error details.' : ''}
             
-            Return ONLY the enhanced prompt in Markdown format.`;
+            Return ONLY the enhanced prompt in plain text format (do NOT use markdown symbols like ** or #). Keep it highly readable using clear spacing, capital letters for headers, and standard bullet points.`;
 
         const result = await retryWithBackoff(() => getClient(req).models.generateContent({
             model: MODEL_NAME,
@@ -203,7 +203,7 @@ app.post('/api/improve-prompt', async (req, res) => {
             
             Simple Prompt: ${prompt}
             
-            Return ONLY the improved Master Prompt in Markdown format.`
+            Return ONLY the improved Master Prompt in plain text format (do NOT use markdown symbols like ** or #). Keep it highly readable using clear spacing, capital letters for headers, and standard bullet points.`
         }));
         const responseText = result.candidates[0].content.parts[0].text;
         res.json({ improvedPrompt: responseText });
@@ -234,7 +234,7 @@ app.post('/api/jira-prompt', async (req, res) => {
             Ticket Details:
             ${ticketDetails}
             
-            Return ONLY the structured markdown response.`
+            Return ONLY the structured response in plain text format (do NOT use markdown symbols like ** or #). Keep it highly readable using clear spacing, capital letters for headers, and standard bullet points.`
         }));
         const responseText = result.candidates[0].content.parts[0].text;
         res.json({ enhancedPrompt: responseText });
