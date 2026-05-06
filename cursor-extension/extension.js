@@ -35,7 +35,9 @@ function activate(context) {
             cancellable: false
         }, async (progress) => {
             try {
-                const fetch = require('node-fetch');
+                // Dynamic import to support both new and old Cursor versions
+                const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+                
                 const response = await fetch('https://prompt-enhancer-backend-vfkc.onrender.com/api/improve-prompt', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
