@@ -367,6 +367,69 @@ app.post('/api/jira-prompt', async (req, res) => {
     }
 });
 
+app.post('/api/analyze-image', async (req, res) => {
+    const { image, mimeType, analysisType, customPrompt } = req.body;
+    if (!image) return res.status(400).json({ error: 'Image is required' });
+
+    const analysisPrompts = {
+        describe: `Analyze this image in detail. Describe what you see including:
+            - Main subject and content
+            - Colors, layout, and composition
+            - Text visible in the image (if any)
+            - Overall context and purpose
+            Provide a clear, structured description.`,
+
+        ocr: `Extract ALL text visible in this image. Return the text exactly as it appears, preserving:
+            - Line breaks and formatting
+            - Headers and labels
+            - Any code or technical content
+            Return ONLY the extracted text, nothing else.`,
+
+        ui_review: `Analyze this UI/UX screenshot and provide:
+            1. LAYOUT ANALYSIS: Describe the page structure, sections, and component hierarchy.
+            2. DESIGN ASSESSMENT: Evaluate colors, typography, spacing, and visual consistency.
+            3. UX ISSUES: Identify potential usability problems or improvements.
+            4. ACCESSIBILITY: Note any accessibility concerns (contrast, text size, etc.).
+            5. SUGGESTIONS: Provide 3-5 specific improvement recommendations.
+            Return in plain text with clear headers.`,
+
+        debug: `Analyze this screenshot for errors or bugs. Look for:
+            1. ERROR MESSAGES: Identify and transcribe any error text, stack traces, or warnings.
+            2. ROOT CAUSE: Suggest what might be causing the issue.
+            3. FIX SUGGESTIONS: Provide specific steps to resolve the problem.
+            4. RELEVANT CODE: If code is visible, identify the problematic section.
+            Return a structured analysis in plain text.`,
+
+        code_review: `Analyze the code visible in this screenshot:
+            1. LANGUAGE & FRAMEWORK: Identify the programming language and any frameworks.
+            2. CODE QUALITY: Assess readability, naming conventions, and structure.
+            3. BUGS & ISSUES: Identify potential bugs, security issues, or anti-patterns.
+            4. IMPROVEMENTS: Suggest specific improvements with code examples.
+            5. BEST PRACTICES: Note which best practices are followed or missing.
+            Return a detailed code review in plain text.`,
+
+        diagram: `Analyze this diagram/flowchart/architecture image:
+            1. TYPE: What kind of diagram is this (flowchart, sequence, ER, architecture, etc.)?
+            2. COMPONENTS: List all entities, services, or nodes visible.
+            3. RELATIONSHIPS: Describe the connections and data flow between components.
+            4. SUMMARY: Provide a high-level summary of what the diagram represents.
+            5. TEXT REPRESENTATION: Convert the diagram into a text-based representation.
+            Return a structured analysis.`,
+
+        custom: customPrompt || 'Analyze this image and describe what you see in detail.'
+    };
+
+    const promptText = analysisPrompts[analysisType] || analysisPrompts.describe;
+
+    try {
+        const responseText = await callWithFailover(req, promptText, image, mimeType || 'image/png');
+        res.json({ analysis: responseText, type: analysisType || 'describe' });
+    } catch (error) {
+        console.error('Image analysis error:', error);
+        res.status(500).json({ error: error.message || 'Failed to analyze image. Please try again.' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
