@@ -50,29 +50,17 @@ function activate(context) {
                     throw new Error(data.error);
                 }
 
-                // Show the result in a Webview popup instead of replacing text
-                const panel = vscode.window.createWebviewPanel(
-                    'promptResult',
-                    '✨ Improved Prompt',
-                    vscode.ViewColumn.Beside,
-                    { enableScripts: true }
-                );
+                // 1. Automatically copy to clipboard for immediate use
+                await vscode.env.clipboard.writeText(data.improvedPrompt);
 
-                panel.webview.html = getWebviewContent(data.improvedPrompt);
+                // 2. Open in a new unsaved document so the user can see/edit it
+                const doc = await vscode.workspace.openTextDocument({
+                    content: data.improvedPrompt,
+                    language: 'markdown'
+                });
+                await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
 
-                // Handle messages from the webview (like copying)
-                panel.webview.onDidReceiveMessage(
-                    message => {
-                        switch (message.command) {
-                            case 'copy':
-                                vscode.env.clipboard.writeText(message.text);
-                                vscode.window.showInformationMessage('Copied to clipboard!');
-                                return;
-                        }
-                    },
-                    undefined,
-                    context.subscriptions
-                );
+                vscode.window.showInformationMessage('✨ Prompt Improved & Copied to Clipboard!');
 
             } catch (err) {
                 vscode.window.showErrorMessage('Error improving prompt: ' + err.message);
@@ -81,40 +69,6 @@ function activate(context) {
     });
 
     context.subscriptions.push(disposable);
-}
-
-function getWebviewContent(prompt) {
-    return `<!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <style>
-            body { font-family: sans-serif; padding: 20px; background: #1e1e1e; color: #ccc; }
-            pre { background: #2d2d2d; padding: 15px; border-radius: 8px; white-space: pre-wrap; border: 1px solid #444; }
-            button { 
-                background: #6366f1; color: white; border: none; padding: 10px 20px; 
-                border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 15px;
-            }
-            button:hover { background: #4f46e5; }
-            h2 { color: #a855f7; margin-top: 0; }
-        </style>
-    </head>
-    <body>
-        <h2>✨ Your Improved Prompt</h2>
-        <button onclick="copyText()">📋 Copy to Clipboard</button>
-        <pre id="promptText">${prompt.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
-        <script>
-            const vscode = acquireVsCodeApi();
-            function copyText() {
-                const text = document.getElementById('promptText').innerText;
-                vscode.postMessage({
-                    command: 'copy',
-                    text: text
-                });
-            }
-        </script>
-    </body>
-    </html>`;
 }
 
 function deactivate() {}
