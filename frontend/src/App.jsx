@@ -47,6 +47,8 @@ function App() {
   const [chatHistory, setChatHistory] = useState([])
   const [user, setUser] = useState(null)
   const [personalApiKey, setPersonalApiKey] = useState('')
+  const [image, setImage] = useState(null) // base64 string
+  const [mimeType, setMimeType] = useState('image/png')
 
   useEffect(() => {
     const saved = localStorage.getItem('chatHistory')
@@ -100,6 +102,26 @@ function App() {
     setTimeout(() => setToast(null), 2000)
   }
 
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Image size should be less than 5MB")
+        return
+      }
+      setMimeType(file.type)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImage(reader.result)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const removeImage = () => {
+    setImage(null)
+  }
+
   const handleEnhance = async () => {
     setLoading(prev => ({ ...prev, enhance: true }))
     setError(null)
@@ -109,7 +131,7 @@ function App() {
       const response = await fetch(`${API_BASE}/enhance-prompt`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ prompt: fullPrompt, frontendStack, backendStack, includeGoogleServices, includeLogo })
+        body: JSON.stringify({ prompt: fullPrompt, frontendStack, backendStack, includeGoogleServices, includeLogo, image, mimeType })
       })
       const data = await response.json()
       if (data.error) throw new Error(data.error)
@@ -129,7 +151,7 @@ function App() {
       const response = await fetch(`${API_BASE}/generate-project`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ enhancedPrompt, frontendStack, backendStack, includeGoogleServices, includeLogo })
+        body: JSON.stringify({ enhancedPrompt, frontendStack, backendStack, includeGoogleServices, includeLogo, image, mimeType })
       })
       const data = await response.json()
       if (data.error) throw new Error(data.error)
@@ -252,7 +274,7 @@ function App() {
       const response = await fetch(`${API_BASE}/general-chat`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ prompt, image, mimeType })
       })
       const data = await response.json()
       if (data.error) throw new Error(data.error)
@@ -273,7 +295,7 @@ function App() {
       const response = await fetch(`${API_BASE}/jira-prompt`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ ticketDetails: prompt })
+        body: JSON.stringify({ ticketDetails: prompt, image, mimeType })
       })
       const data = await response.json()
       if (data.error) throw new Error(data.error)
@@ -294,7 +316,7 @@ function App() {
       const response = await fetch(`${API_BASE}/improve-prompt`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ prompt, image, mimeType })
       })
       const data = await response.json()
       if (data.error) throw new Error(data.error)
@@ -433,12 +455,18 @@ function App() {
                     {appMode === 'jira' && 'Jira Ticket / Bug Details'}
                     {appMode === 'improver' && 'Simple Prompt to Improve'}
                   </label>
-                  <button
-                    onClick={handleVoiceTyping}
-                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: loading.listening ? '#ef4444' : 'var(--accent)' }}
-                  >
-                    {loading.listening ? 'Listening...' : '🎤 Talk to Write'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <button
+                      onClick={handleVoiceTyping}
+                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: loading.listening ? '#ef4444' : 'var(--accent)', border: 'none', borderRadius: '4px', cursor: 'pointer', color: 'white' }}
+                    >
+                      {loading.listening ? 'Listening...' : '🎤 Talk to Write'}
+                    </button>
+                    <label style={{ cursor: 'pointer', fontSize: '1.2rem' }} title="Upload Image/Screenshot">
+                      📷
+                      <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+                    </label>
+                  </div>
                 </div>
                 <textarea
                   placeholder={
@@ -451,6 +479,15 @@ function App() {
                   onChange={(e) => setPrompt(e.target.value)}
                   disabled={loading.enhance || loading.generate || loading.chat}
                 />
+                {image && (
+                  <div style={{ position: 'relative', marginTop: '0.5rem', width: '100px' }}>
+                    <img src={image} alt="Preview" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                    <button 
+                      onClick={removeImage}
+                      style={{ position: 'absolute', top: '-10px', right: '-10px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontSize: '12px' }}
+                    >✕</button>
+                  </div>
+                )}
               </div>
 
               {appMode === 'architect' && (

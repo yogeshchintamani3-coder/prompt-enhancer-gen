@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 app.use(morgan('dev'));
 
 const defaultClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
@@ -22,6 +22,21 @@ const getClient = (req) => {
         return new GoogleGenAI({ apiKey: customKey });
     }
     return defaultClient;
+};
+// --- Helper to format content with optional image ---
+const formatContents = (text, imageBase64, mimeType = 'image/png') => {
+    const parts = [{ text }];
+    if (imageBase64) {
+        // Remove data:image/png;base64, prefix if present
+        const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        parts.push({
+            inlineData: {
+                data: cleanBase64,
+                mimeType: mimeType
+            }
+        });
+    }
+    return { contents: [{ parts }] };
 };
 
 // --- Retry Logic with Exponential Backoff ---
@@ -50,13 +65,11 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/enhance-prompt', async (req, res) => {
-    const { prompt, frontendStack, backendStack, includeGoogleServices, includeLogo } = req.body;
+    const { prompt, frontendStack, backendStack, includeGoogleServices, includeLogo, image, mimeType } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     try {
-        const result = await retryWithBackoff(() => getClient(req).models.generateContent({
-            model: MODEL_NAME,
-            contents: `You are a prompt engineering expert. Enhance the following simple project requirement into a "Super Prompt".
+        const text = `You are a prompt engineering expert. Enhance the following simple project requirement into a "Super Prompt".
             
             TECH STACK PREFERENCE:
             - Frontend: ${frontendStack || 'Modern React'}
@@ -69,11 +82,16 @@ app.post('/api/enhance-prompt', async (req, res) => {
             4. ${includeLogo ? 'BRANDING & LOGO: Define a clear visual identity including logo concept, color psychology, and iconography.' : ''}
             5. GENERATE COMPREHENSIVE AUTOMATED TEST CASES.
             6. DESIGN SPECIFICATION: Include a detailed section describing the UI/UX layout, components, and user flow as if designing in Figma.
-            6. Follow proper design patterns and clean code principles.
+            7. Follow proper design patterns and clean code principles.
             
             Original Requirement: ${prompt}
+            ${image ? 'NOTE: I have also attached a screenshot for reference. Please analyze it carefully to understand the UI layout or error details.' : ''}
             
-            Return ONLY the enhanced prompt in Markdown format.`
+            Return ONLY the enhanced prompt in Markdown format.`;
+
+        const result = await retryWithBackoff(() => getClient(req).models.generateContent({
+            model: MODEL_NAME,
+            ...formatContents(text, image, mimeType)
         }));
         const responseText = result.candidates[0].content.parts[0].text;
         res.json({ enhancedPrompt: responseText });
@@ -84,13 +102,11 @@ app.post('/api/enhance-prompt', async (req, res) => {
 });
 
 app.post('/api/generate-project', async (req, res) => {
-    const { enhancedPrompt, frontendStack, backendStack, includeGoogleServices, includeLogo } = req.body;
+    const { enhancedPrompt, frontendStack, backendStack, includeGoogleServices, includeLogo, image, mimeType } = req.body;
     if (!enhancedPrompt) return res.status(400).json({ error: 'Enhanced prompt is required' });
 
     try {
-        const result = await retryWithBackoff(() => getClient(req).models.generateContent({
-            model: MODEL_NAME,
-            contents: `You are an expert full-stack developer and UI Designer. Based on the following requirement, generate a complete project plan, code, and design specs.
+        const text = `You are an expert full-stack developer and UI Designer. Based on the following requirement, generate a complete project plan, code, and design specs.
             
             STRICT ARCHITECTURAL RULES:
             - Use ${frontendStack} for the frontend and ${backendStack} for the backend.
@@ -100,6 +116,7 @@ app.post('/api/generate-project', async (req, res) => {
             - DEPLOYMENT READINESS: Provide a deployment guide assuming the user will deploy using platforms that only require a GitHub repository URL (like Render, Vercel, or Netlify).
             
             Requirement: ${enhancedPrompt}
+            ${image ? 'NOTE: I have also attached a screenshot for reference. Use this image to guide the UI design and layout.' : ''}
             
             Please provide the following in a structured JSON format:
             1. projectStructure: A list of files and folders (showing MVC).
@@ -112,11 +129,14 @@ app.post('/api/generate-project', async (req, res) => {
             8. documentation: A README.md content with setup instructions.
             9. validation: A detailed explanation of why the architecture, tests, and design are robust.
             
-            Format the response as a valid JSON object. Do not include markdown code blocks around the JSON.`
+            Format the response as a valid JSON object. Do not include markdown code blocks around the JSON.`;
+
+        const result = await retryWithBackoff(() => getClient(req).models.generateContent({
+            model: MODEL_NAME,
+            ...formatContents(text, image, mimeType)
         }));
         
         let responseText = result.candidates[0].content.parts[0].text;
-        // Basic cleanup in case the LLM still includes code blocks
         responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         
         const projectData = JSON.parse(responseText);
@@ -149,13 +169,13 @@ app.post('/api/translate-prompt', async (req, res) => {
 });
 
 app.post('/api/general-chat', async (req, res) => {
-    const { prompt } = req.body;
+    const { prompt, image, mimeType } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     try {
         const result = await retryWithBackoff(() => getClient(req).models.generateContent({
             model: MODEL_NAME,
-            contents: prompt
+            ...formatContents(prompt, image, mimeType)
         }));
         const responseText = result.candidates[0].content.parts[0].text;
         res.json({ response: responseText });
