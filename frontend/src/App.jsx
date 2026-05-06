@@ -47,6 +47,8 @@ function App() {
   const [chatHistory, setChatHistory] = useState([])
   const [user, setUser] = useState(null)
   const [personalApiKey, setPersonalApiKey] = useState('')
+  const [openaiApiKey, setOpenaiApiKey] = useState('')
+  const [groqApiKey, setGroqApiKey] = useState('')
   const [image, setImage] = useState(null) // base64 string
   const [mimeType, setMimeType] = useState('image/png')
 
@@ -61,6 +63,10 @@ function App() {
     }
     const savedKey = localStorage.getItem('personalApiKey')
     if (savedKey) setPersonalApiKey(savedKey)
+    const savedOpenAI = localStorage.getItem('openaiApiKey')
+    if (savedOpenAI) setOpenaiApiKey(savedOpenAI)
+    const savedGroq = localStorage.getItem('groqApiKey')
+    if (savedGroq) setGroqApiKey(savedGroq)
     const savedUser = localStorage.getItem('userProfile')
     if (savedUser) setUser(JSON.parse(savedUser))
   }, [])
@@ -68,6 +74,16 @@ function App() {
   const handleSetApiKey = (val) => {
     setPersonalApiKey(val)
     localStorage.setItem('personalApiKey', val)
+  }
+
+  const handleSetOpenaiKey = (val) => {
+    setOpenaiApiKey(val)
+    localStorage.setItem('openaiApiKey', val)
+  }
+
+  const handleSetGroqKey = (val) => {
+    setGroqApiKey(val)
+    localStorage.setItem('groqApiKey', val)
   }
 
   const handleLoginSuccess = (credentialResponse) => {
@@ -80,19 +96,19 @@ function App() {
   const handleLogout = () => {
     setUser(null)
     setPersonalApiKey('')
+    setOpenaiApiKey('')
+    setGroqApiKey('')
     localStorage.removeItem('userProfile')
     localStorage.removeItem('personalApiKey')
+    localStorage.removeItem('openaiApiKey')
+    localStorage.removeItem('groqApiKey')
   }
 
   const getHeaders = () => {
     const headers = { 'Content-Type': 'application/json' }
-    if (personalApiKey) {
-      if (personalApiKey.startsWith('sk-')) {
-        headers['x-openai-key'] = personalApiKey;
-      } else {
-        headers['x-api-key'] = personalApiKey;
-      }
-    }
+    if (personalApiKey) headers['x-api-key'] = personalApiKey
+    if (openaiApiKey) headers['x-openai-key'] = openaiApiKey
+    if (groqApiKey) headers['x-groq-key'] = groqApiKey
     return headers
   }
 
@@ -411,14 +427,34 @@ function App() {
                   <span className="user-plan" style={{ fontSize: '0.65rem', cursor: 'pointer' }} onClick={handleLogout}>Logout</span>
                 </div>
               </div>
+              <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', margin: '0.25rem 0' }}>Your API Keys (optional - for faster responses)</p>
               <input
                 type="password"
-                placeholder="Paste Gemini or OpenAI API Key..."
+                placeholder="Gemini API Key (AIza...)"
                 value={personalApiKey}
                 onChange={(e) => handleSetApiKey(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem', fontSize: '0.75rem', background: 'rgba(0,0,0,0.3)' }}
-                title="Used locally to bypass server rate limits"
+                style={{ width: '100%', padding: '0.4rem', fontSize: '0.7rem', background: 'rgba(0,0,0,0.3)', marginBottom: '0.3rem', borderRadius: '4px', border: personalApiKey ? '1px solid #4caf50' : '1px solid var(--border)' }}
+                title="Google Gemini API key from aistudio.google.com"
               />
+              <input
+                type="password"
+                placeholder="OpenAI Key (sk-...)"
+                value={openaiApiKey}
+                onChange={(e) => handleSetOpenaiKey(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem', fontSize: '0.7rem', background: 'rgba(0,0,0,0.3)', marginBottom: '0.3rem', borderRadius: '4px', border: openaiApiKey ? '1px solid #4caf50' : '1px solid var(--border)' }}
+                title="OpenAI API key from platform.openai.com"
+              />
+              <input
+                type="password"
+                placeholder="Groq Key (gsk_...)"
+                value={groqApiKey}
+                onChange={(e) => handleSetGroqKey(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem', fontSize: '0.7rem', background: 'rgba(0,0,0,0.3)', borderRadius: '4px', border: groqApiKey ? '1px solid #4caf50' : '1px solid var(--border)' }}
+                title="Groq API key from console.groq.com (free)"
+              />
+              <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', margin: '0.3rem 0 0', opacity: 0.7 }}>
+                {personalApiKey || openaiApiKey || groqApiKey ? '✓ Using your keys' : 'Add keys to avoid rate limits'}
+              </p>
             </>
           )}
         </div>

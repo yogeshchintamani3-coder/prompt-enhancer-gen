@@ -83,6 +83,14 @@ const getOpenAIClient = (req) => {
     return openaiClient;
 };
 
+const getGroqClient = (req) => {
+    const customGroqKey = req.headers['x-groq-key'];
+    if (customGroqKey) {
+        return new Groq({ apiKey: customGroqKey });
+    }
+    return groqClient;
+};
+
 // --- Helper: format content for Gemini ---
 const formatGeminiContents = (text, imageBase64, mimeType = 'image/png') => {
     const parts = [{ text }];
@@ -149,6 +157,7 @@ async function callWithFailover(req, text, imageBase64 = null, mimeType = 'image
 
     const gemini = getGeminiClient(req);
     const openai = getOpenAIClient(req);
+    const groq = getGroqClient(req);
 
     const attempts = [];
 
@@ -166,31 +175,14 @@ async function callWithFailover(req, text, imageBase64 = null, mimeType = 'image
         }
     }
 
-    // Add Groq models (generous free tier — best fallback when Gemini and OpenAI are exhausted)
-    if (groqClient) {
+    if (groq) {
         for (const model of AI_PROVIDERS.groq.models) {
             if (hasImage && !model.supportsImages) continue;
-            attempts.push({ provider: 'groq', client: groqClient, model, callFn: callGroq });
+            attempts.push({ provider: 'groq', client: groq, model, callFn: callGroq });
         }
     }
 
-    // Add OpenAI from user-provided key as extra fallback
-    if (req.headers['x-openai-key'] && !openai) {
-        const userOpenAI = new OpenAI({ apiKey: req.headers['x-openai-key'] });
-        for (const model of AI_PROVIDERS.openai.models) {
-            if (hasImage && !model.supportsImages) continue;
-            attempts.push({ provider: 'openai', client: userOpenAI, model, callFn: callOpenAI });
-        }
-    }
-
-    // Add Gemini from user-provided key as extra fallback
-    if (req.headers['x-api-key'] && !gemini) {
-        const userGemini = new GoogleGenAI({ apiKey: req.headers['x-api-key'], httpOptions: GEMINI_HTTP_OPTIONS });
-        for (const model of AI_PROVIDERS.gemini.models) {
-            if (hasImage && !model.supportsImages) continue;
-            attempts.push({ provider: 'gemini', client: userGemini, model, callFn: callGemini });
-        }
-    }
+    // User-provided keys are already handled by getGeminiClient/getOpenAIClient/getGroqClient above
 
     if (attempts.length === 0) {
         throw new Error('No AI providers configured. Set GEMINI_API_KEY or OPENAI_API_KEY environment variable on the server.');
