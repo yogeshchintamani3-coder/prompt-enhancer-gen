@@ -24,7 +24,7 @@ function injectImproveButton() {
 
             // Find a good place to insert (usually near the parent or a sibling button)
             const parent = input.parentElement;
-            if (parent) {
+            if (parent && !parent.querySelector(".prompt-improve-btn")) {
                 // For ChatGPT, the textarea is inside a wrapper. 
                 // We'll append it to the wrapper.
                 parent.appendChild(btn);
