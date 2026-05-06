@@ -6,6 +6,14 @@ const vscode = require('vscode');
 function activate(context) {
     console.log('Prompt Enhancer is now active!');
 
+    // Create Status Bar Item
+    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBarItem.command = 'prompt-enhancer.enhance';
+    statusBarItem.text = '$(sparkle) Enhance Prompt';
+    statusBarItem.tooltip = 'Highlight text and click to improve your prompt';
+    statusBarItem.show();
+    context.subscriptions.push(statusBarItem);
+
     let disposable = vscode.commands.registerCommand('prompt-enhancer.enhance', async function () {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
