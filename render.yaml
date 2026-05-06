@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: prompt-enhancer-backend
+    env: node
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false # User must provide this in the Render dashboard
