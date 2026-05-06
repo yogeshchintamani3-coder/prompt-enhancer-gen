@@ -6,33 +6,37 @@ const vscode = require('vscode');
 function activate(context) {
     console.log('Prompt Enhancer is now active!');
 
-    // Create Status Bar Item
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     statusBarItem.command = 'prompt-enhancer.enhance';
     statusBarItem.text = '$(sparkle) Enhance Prompt';
-    statusBarItem.tooltip = 'Highlight text and click to improve your prompt';
+    statusBarItem.tooltip = 'Select text or click to type a prompt to enhance';
     statusBarItem.show();
     context.subscriptions.push(statusBarItem);
 
     let disposable = vscode.commands.registerCommand('prompt-enhancer.enhance', async function () {
+        let text = '';
+
         const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showInformationMessage('Open a file to enhance a prompt.');
-            return;
-        }
+        if (editor) {
+            const selection = editor.selection;
+            text = editor.document.getText(selection);
 
-        const selection = editor.selection;
-        let text = editor.document.getText(selection);
-
-        // If no text is selected, fallback to the current line
-        if (!text || text.trim().length === 0) {
-            const line = editor.document.lineAt(selection.active.line);
-            text = line.text;
+            if (!text || text.trim().length === 0) {
+                const line = editor.document.lineAt(selection.active.line);
+                text = line.text;
+            }
         }
 
         if (!text || text.trim().length === 0) {
-            vscode.window.showWarningMessage('Please highlight the text you want to enhance.');
-            return;
+            text = await vscode.window.showInputBox({
+                prompt: 'Enter the prompt you want to enhance',
+                placeHolder: 'E.g., Write a REST API for user authentication...',
+                ignoreFocusOut: true
+            });
+
+            if (!text || text.trim().length === 0) {
+                return;
+            }
         }
 
         text = text.trim();

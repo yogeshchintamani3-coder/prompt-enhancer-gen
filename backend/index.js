@@ -13,13 +13,24 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(morgan('dev'));
 
-const defaultClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-const MODEL_NAME = "gemini-flash-lite-latest";
+const GEMINI_HTTP_OPTIONS = {
+    baseUrl: 'https://generativelanguage.googleapis.com',
+    apiVersion: 'v1beta'
+};
+
+const defaultClient = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY || '',
+    httpOptions: GEMINI_HTTP_OPTIONS
+});
+const MODEL_NAME = "gemini-2.0-flash-lite";
 
 const getClient = (req) => {
     const customKey = req.headers['x-api-key'];
     if (customKey) {
-        return new GoogleGenAI({ apiKey: customKey });
+        return new GoogleGenAI({
+            apiKey: customKey,
+            httpOptions: GEMINI_HTTP_OPTIONS
+        });
     }
     return defaultClient;
 };
@@ -46,11 +57,20 @@ async function retryWithBackoff(fn, maxRetries = 5, initialDelay = 2000) {
         try {
             return await fn();
         } catch (error) {
-            // Check if it's a rate limit (429) or temporary server error (503)
-            if (error.status === 429 || error.status === 503) {
+            const status = error.status || error.httpStatusCode;
+            const errorMessage = error.message || '';
+
+            if (errorMessage.includes('location is not supported')) {
+                throw new Error(
+                    'The AI service is not available in the current server region. ' +
+                    'Please try using your own Gemini API key via the settings, or try again later.'
+                );
+            }
+
+            if (status === 429 || status === 503) {
                 retries++;
                 const delay = initialDelay * Math.pow(2, retries);
-                console.log(`API Busy (${error.status}). Retrying in ${delay}ms... (Attempt ${retries}/${maxRetries})`);
+                console.log(`API Busy (${status}). Retrying in ${delay}ms... (Attempt ${retries}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, delay));
             } else {
                 throw error;
@@ -97,7 +117,10 @@ app.post('/api/enhance-prompt', async (req, res) => {
         res.json({ enhancedPrompt: responseText });
     } catch (error) {
         console.error('Enhancement error:', error);
-        res.status(500).json({ error: 'Failed to enhance prompt' });
+        const message = error.message?.includes('not available') || error.message?.includes('location')
+            ? error.message
+            : 'Failed to enhance prompt. Please try again.';
+        res.status(500).json({ error: message });
     }
 });
 
@@ -143,7 +166,10 @@ app.post('/api/generate-project', async (req, res) => {
         res.json(projectData);
     } catch (error) {
         console.error('Generation error:', error);
-        res.status(500).json({ error: 'Failed to generate project' });
+        const message = error.message?.includes('not available') || error.message?.includes('location')
+            ? error.message
+            : 'Failed to generate project. Please try again.';
+        res.status(500).json({ error: message });
     }
 });
 
@@ -164,7 +190,10 @@ app.post('/api/translate-prompt', async (req, res) => {
         res.json({ translatedText });
     } catch (error) {
         console.error('Translation error:', error);
-        res.status(500).json({ error: 'Failed to translate prompt' });
+        const message = error.message?.includes('not available') || error.message?.includes('location')
+            ? error.message
+            : 'Failed to translate prompt. Please try again.';
+        res.status(500).json({ error: message });
     }
 });
 
@@ -181,7 +210,10 @@ app.post('/api/general-chat', async (req, res) => {
         res.json({ response: responseText });
     } catch (error) {
         console.error('Chat error:', error);
-        res.status(500).json({ error: 'Failed to get response from AI' });
+        const message = error.message?.includes('not available') || error.message?.includes('location')
+            ? error.message
+            : 'Failed to get response from AI. Please try again.';
+        res.status(500).json({ error: message });
     }
 });
 
@@ -209,7 +241,10 @@ app.post('/api/improve-prompt', async (req, res) => {
         res.json({ improvedPrompt: responseText });
     } catch (error) {
         console.error('Improvement error:', error);
-        res.status(500).json({ error: 'Failed to improve prompt' });
+        const message = error.message?.includes('not available') || error.message?.includes('location')
+            ? error.message
+            : 'Failed to improve prompt. Please try again.';
+        res.status(500).json({ error: message });
     }
 });
 
@@ -240,7 +275,10 @@ app.post('/api/jira-prompt', async (req, res) => {
         res.json({ enhancedPrompt: responseText });
     } catch (error) {
         console.error('Jira processing error:', error);
-        res.status(500).json({ error: 'Failed to process Jira ticket' });
+        const message = error.message?.includes('not available') || error.message?.includes('location')
+            ? error.message
+            : 'Failed to process Jira ticket. Please try again.';
+        res.status(500).json({ error: message });
     }
 });
 
