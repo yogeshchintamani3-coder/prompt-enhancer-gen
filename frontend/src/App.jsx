@@ -86,7 +86,13 @@ function App() {
 
   const getHeaders = () => {
     const headers = { 'Content-Type': 'application/json' }
-    if (personalApiKey) headers['x-api-key'] = personalApiKey
+    if (personalApiKey) {
+      if (personalApiKey.startsWith('sk-')) {
+        headers['x-openai-key'] = personalApiKey;
+      } else {
+        headers['x-api-key'] = personalApiKey;
+      }
+    }
     return headers
   }
 
@@ -407,7 +413,7 @@ function App() {
               </div>
               <input
                 type="password"
-                placeholder="Paste Gemini API Key..."
+                placeholder="Paste Gemini or OpenAI API Key..."
                 value={personalApiKey}
                 onChange={(e) => handleSetApiKey(e.target.value)}
                 style={{ width: '100%', padding: '0.5rem', fontSize: '0.75rem', background: 'rgba(0,0,0,0.3)' }}
