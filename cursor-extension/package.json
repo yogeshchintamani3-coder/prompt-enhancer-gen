@@ -1,0 +1,34 @@
+{
+  "name": "prompt-enhancer-cursor",
+  "displayName": "AI Prompt Enhancer",
+  "description": "Enhances your prompts directly within Cursor using your AI backend.",
+  "version": "1.0.0",
+  "publisher": "your-name",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "prompt-enhancer.enhance",
+        "title": "Prompt Enhancer: Enhance Selection"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "prompt-enhancer.enhance",
+          "group": "modification"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  }
+}

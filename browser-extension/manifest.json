@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "AI Prompt Enhancer Plus",
+  "version": "1.0",
+  "description": "Improve your AI prompts everywhere with your custom AI backend.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://*.openai.com/*",
+    "https://claude.ai/*",
+    "https://*.google.com/*",
+    "https://prompt-enhancer-backend-vfkc.onrender.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://*.openai.com/*",
+        "https://claude.ai/*",
+        "https://*.google.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["style.css"]
+    }
+  ]
+}
