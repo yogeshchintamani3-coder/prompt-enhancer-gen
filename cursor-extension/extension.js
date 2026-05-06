@@ -19,11 +19,23 @@ function activate(context) {
         const editor = vscode.window.activeTextEditor;
         if (editor) {
             const selection = editor.selection;
-            text = editor.document.getText(selection);
+
+            if (!selection.isEmpty) {
+                const range = new vscode.Range(selection.start, selection.end);
+                text = editor.document.getText(range);
+            }
 
             if (!text || text.trim().length === 0) {
-                const line = editor.document.lineAt(selection.active.line);
+                const activeLine = selection.active.line;
+                const line = editor.document.lineAt(activeLine);
                 text = line.text;
+            }
+
+            if (!text || text.trim().length === 0) {
+                const allText = editor.document.getText();
+                if (allText && allText.trim().length > 0 && allText.trim().length < 5000) {
+                    text = allText;
+                }
             }
         }
 
