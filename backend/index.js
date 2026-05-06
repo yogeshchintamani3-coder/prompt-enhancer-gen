@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import morgan from 'morgan';
 import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
+import Groq from 'groq-sdk';
 
 dotenv.config();
 
@@ -42,6 +43,15 @@ const AI_PROVIDERS = {
             { name: 'gpt-3.5-turbo', supportsImages: false },
         ],
         enabled: !!process.env.OPENAI_API_KEY
+    },
+    groq: {
+        models: [
+            { name: 'llama-3.3-70b-versatile', supportsImages: false },
+            { name: 'llama-3.1-8b-instant', supportsImages: false },
+            { name: 'mixtral-8x7b-32768', supportsImages: false },
+            { name: 'gemma2-9b-it', supportsImages: false },
+        ],
+        enabled: !!process.env.GROQ_API_KEY
     }
 };
 
@@ -51,6 +61,10 @@ const geminiClient = process.env.GEMINI_API_KEY
 
 const openaiClient = process.env.OPENAI_API_KEY
     ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    : null;
+
+const groqClient = process.env.GROQ_API_KEY
+    ? new Groq({ apiKey: process.env.GROQ_API_KEY })
     : null;
 
 const getGeminiClient = (req) => {
@@ -116,6 +130,16 @@ async function callOpenAI(client, model, text, imageBase64, mimeType) {
     return response.choices[0].message.content;
 }
 
+// --- Call Groq Model (OpenAI-compatible API) ---
+async function callGroq(client, model, text, imageBase64, mimeType) {
+    const response = await client.chat.completions.create({
+        model: model.name,
+        messages: [{ role: 'user', content: text }],
+        max_tokens: 4096
+    });
+    return response.choices[0].message.content;
+}
+
 // --- Multi-Provider Failover Engine ---
 // Priority: Gemini models first (free/cheaper), then OpenAI as fallback.
 // ANY failure on one model/provider automatically moves to the next — never stops early.
@@ -128,7 +152,6 @@ async function callWithFailover(req, text, imageBase64 = null, mimeType = 'image
 
     const attempts = [];
 
-    // Add Gemini models (even if client has a key issue, we try and let it fail gracefully)
     if (gemini) {
         for (const model of AI_PROVIDERS.gemini.models) {
             if (hasImage && !model.supportsImages) continue;
@@ -136,7 +159,6 @@ async function callWithFailover(req, text, imageBase64 = null, mimeType = 'image
         }
     }
 
-    // Add OpenAI models from server key
     if (openai) {
         for (const model of AI_PROVIDERS.openai.models) {
             if (hasImage && !model.supportsImages) continue;
@@ -144,12 +166,19 @@ async function callWithFailover(req, text, imageBase64 = null, mimeType = 'image
         }
     }
 
-    // Add OpenAI models from user-provided key (works even without server key)
-    if (req.headers['x-openai-key']) {
+    // Add Groq models (generous free tier — best fallback when Gemini and OpenAI are exhausted)
+    if (groqClient) {
+        for (const model of AI_PROVIDERS.groq.models) {
+            if (hasImage && !model.supportsImages) continue;
+            attempts.push({ provider: 'groq', client: groqClient, model, callFn: callGroq });
+        }
+    }
+
+    // Add OpenAI from user-provided key as extra fallback
+    if (req.headers['x-openai-key'] && !openai) {
         const userOpenAI = new OpenAI({ apiKey: req.headers['x-openai-key'] });
         for (const model of AI_PROVIDERS.openai.models) {
             if (hasImage && !model.supportsImages) continue;
-            if (openai) continue; // skip if server already has openai (avoid duplicates)
             attempts.push({ provider: 'openai', client: userOpenAI, model, callFn: callOpenAI });
         }
     }
@@ -218,6 +247,7 @@ app.get('/api/health', (req, res) => {
     const providers = {};
     if (AI_PROVIDERS.gemini.enabled) providers.gemini = AI_PROVIDERS.gemini.models.map(m => m.name);
     if (AI_PROVIDERS.openai.enabled) providers.openai = AI_PROVIDERS.openai.models.map(m => m.name);
+    if (AI_PROVIDERS.groq.enabled) providers.groq = AI_PROVIDERS.groq.models.map(m => m.name);
     res.json({ status: 'ok', providers });
 });
 

@@ -15,3 +15,5 @@ services:
         sync: false # User must provide this in the Render dashboard
       - key: OPENAI_API_KEY
         sync: false # ChatGPT fallback - provide in the Render dashboard
+      - key: GROQ_API_KEY
+        sync: false # Groq free tier fallback - get from console.groq.com
