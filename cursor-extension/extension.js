@@ -22,12 +22,20 @@ function activate(context) {
         }
 
         const selection = editor.selection;
-        const text = editor.document.getText(selection);
+        let text = editor.document.getText(selection);
 
-        if (!text) {
-            vscode.window.showWarningMessage('Please select some text to enhance.');
+        // If no text is selected, fallback to the current line
+        if (!text || text.trim().length === 0) {
+            const line = editor.document.lineAt(selection.active.line);
+            text = line.text;
+        }
+
+        if (!text || text.trim().length === 0) {
+            vscode.window.showWarningMessage('Please highlight the text you want to enhance.');
             return;
         }
+
+        text = text.trim();
 
         vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
