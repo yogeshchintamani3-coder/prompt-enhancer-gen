@@ -170,11 +170,12 @@ function App() {
     showToast('Copied to clipboard!')
   }
 
-  const handleSpeak = (lang) => {
+  const handleSpeak = (textToSpeak) => {
     // Cancel any ongoing speech
     window.speechSynthesis.cancel()
 
-    const cleanText = (translatedPrompt || enhancedPrompt)
+    const text = typeof textToSpeak === 'string' ? textToSpeak : (translatedPrompt || enhancedPrompt);
+    const cleanText = text
       .replace(/[#*_~`\[\]()]/g, '') // Remove markdown special characters
       .replace(/[-+]/g, ' ') // Replace bullets/plus with space
       .trim();
@@ -223,18 +224,23 @@ function App() {
     window.speechSynthesis.cancel()
   }
 
-  const handleTranslate = async () => {
+  const handleTranslate = async (textToTranslate = enhancedPrompt, isChat = false) => {
     setLoading(prev => ({ ...prev, translate: true }))
     setError(null)
     try {
       const response = await fetch(`${API_BASE}/translate-prompt`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ prompt: enhancedPrompt, targetLanguage: targetLang })
+        body: JSON.stringify({ prompt: textToTranslate, targetLanguage: targetLang })
       })
       const data = await response.json()
       if (data.error) throw new Error(data.error)
-      setTranslatedPrompt(data.translatedText)
+      
+      if (isChat) {
+        setChatResponse(data.translatedText)
+      } else {
+        setTranslatedPrompt(data.translatedText)
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -624,13 +630,27 @@ function App() {
           {/* VIEW 4: CHAT SCREEN */}
           {view === 'chat' && chatResponse && (
             <section className="card chat-result" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <button onClick={() => setView('input')} style={{ background: 'transparent', border: '1px solid var(--border)', marginBottom: '1rem', padding: '0.4rem 1rem' }}>← Back</button>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                 <label style={{ color: 'var(--accent)', fontWeight: '700' }}>AI Response</label>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <button onClick={() => handleCopy(chatResponse)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'var(--primary)' }}>Copy</button>
+                  <button onClick={() => handleSpeak(chatResponse)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'var(--accent)' }}>Listen</button>
                   <button onClick={handleStop} style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: '#ef4444' }}>Stop</button>
                 </div>
               </div>
+
+              {/* Translation Dropdown */}
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)} style={{ flex: 1, padding: '0.4rem' }}>
+                  {LANGUAGES.map(l => (
+                    <option key={l.code} value={l.name}>{l.name}</option>
+                  ))}
+                </select>
+                <button onClick={() => handleTranslate(chatResponse, true)} disabled={loading.translate} style={{ background: 'var(--secondary)' }}>Translate</button>
+              </div>
+
               <div className="enhanced-prompt-area" style={{ minHeight: '400px' }}>{chatResponse}</div>
             </section>
           )}
