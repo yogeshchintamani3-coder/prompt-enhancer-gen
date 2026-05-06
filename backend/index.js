@@ -165,6 +165,34 @@ app.post('/api/general-chat', async (req, res) => {
     }
 });
 
+app.post('/api/improve-prompt', async (req, res) => {
+    const { prompt } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+
+    try {
+        const result = await retryWithBackoff(() => getClient(req).models.generateContent({
+            model: MODEL_NAME,
+            contents: `You are a world-class Prompt Engineer. 
+            Take the following simple one-liner or basic prompt and transform it into a "Master Prompt".
+            
+            The Master Prompt should follow the RTFC framework:
+            1. **Role**: Assign a specific persona or expert role.
+            2. **Task**: Clearly define the objective.
+            3. **Format**: Specify the desired output structure (Markdown, Table, etc.).
+            4. **Constraints/Context**: Add quality requirements, tone, and what to avoid.
+            
+            Simple Prompt: ${prompt}
+            
+            Return ONLY the improved Master Prompt in Markdown format.`
+        }));
+        const responseText = result.candidates[0].content.parts[0].text;
+        res.json({ improvedPrompt: responseText });
+    } catch (error) {
+        console.error('Improvement error:', error);
+        res.status(500).json({ error: 'Failed to improve prompt' });
+    }
+});
+
 app.post('/api/jira-prompt', async (req, res) => {
     const { ticketDetails } = req.body;
     if (!ticketDetails) return res.status(400).json({ error: 'Ticket details are required' });

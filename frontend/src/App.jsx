@@ -25,7 +25,7 @@ function App() {
   const [backendStack, setBackendStack] = useState('Java (Spring Boot)')
   const [includeGoogleServices, setIncludeGoogleServices] = useState(true)
   const [includeLogo, setIncludeLogo] = useState(true)
-  const [appMode, setAppMode] = useState('architect') // 'architect', 'general', 'jira'
+  const [appMode, setAppMode] = useState('architect') // 'architect', 'general', 'jira', 'improver'
   const SCORING_TIPS = `Tips for scoring high:
 - Adoption is at an early stage, with initial usage of Google services such as Google Cloud, Firebase, or basic APIs.
 - System efficiency indicates higher resource usage, often linked to asset size, processing flow, or dependency weight.
@@ -162,10 +162,10 @@ function App() {
     const utterance = new SpeechSynthesisUtterance(cleanText)
 
     // Explicitly set language
-    const currentLangCode = translatedPrompt ? 
-      (LANGUAGES.find(l => l.name === targetLang)?.code || 'en-US') : 
+    const currentLangCode = translatedPrompt ?
+      (LANGUAGES.find(l => l.name === targetLang)?.code || 'en-US') :
       'en-US';
-    
+
     utterance.lang = currentLangCode;
 
     // Get all voices
@@ -287,9 +287,30 @@ function App() {
     }
   }
 
+  const handleImproveMode = async () => {
+    setLoading(prev => ({ ...prev, chat: true }))
+    setError(null)
+    try {
+      const response = await fetch(`${API_BASE}/improve-prompt`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ prompt })
+      })
+      const data = await response.json()
+      if (data.error) throw new Error(data.error)
+      setChatResponse(data.improvedPrompt)
+      setView('chat')
+      saveToHistory('Improved: ' + prompt.slice(0, 20) + '...', 'improver', data.improvedPrompt)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(prev => ({ ...prev, chat: false }))
+    }
+  }
+
   const loadHistoryItem = (item) => {
-    if (item.type === 'chat' || item.type === 'jira') {
-      setAppMode(item.type === 'jira' ? 'jira' : 'general')
+    if (item.type === 'chat' || item.type === 'jira' || item.type === 'improver') {
+      setAppMode(item.type === 'jira' ? 'jira' : (item.type === 'improver' ? 'improver' : 'general'))
       setChatResponse(item.contentData)
       setView('chat')
     } else {
@@ -319,7 +340,9 @@ function App() {
           <p className="history-title">Recent History</p>
           {chatHistory.map(item => (
             <div key={item.id} className="history-item" onClick={() => loadHistoryItem(item)}>
-              <span className="history-icon">{item.type === 'chat' ? '💬' : '🏗️'}</span>
+              <span className="history-icon">
+                {item.type === 'chat' ? '💬' : item.type === 'improver' ? '✨' : '🏗️'}
+              </span>
               <span className="history-text">{item.title}</span>
             </div>
           ))}
@@ -377,6 +400,10 @@ function App() {
               className={appMode === 'jira' ? 'active' : ''}
               onClick={() => { setAppMode('jira'); startNewChat(); }}
             >Jira Assistant</span>
+            <span
+              className={appMode === 'improver' ? 'active' : ''}
+              onClick={() => { setAppMode('improver'); startNewChat(); }}
+            >Prompt Improver</span>
           </div>
         </header>
 
@@ -392,6 +419,7 @@ function App() {
                     {appMode === 'architect' && 'Project Requirement'}
                     {appMode === 'general' && 'Ask Anything'}
                     {appMode === 'jira' && 'Jira Ticket / Bug Details'}
+                    {appMode === 'improver' && 'Simple Prompt to Improve'}
                   </label>
                   <button
                     onClick={handleVoiceTyping}
@@ -404,7 +432,8 @@ function App() {
                   placeholder={
                     appMode === 'architect' ? "E.g., Build a personal finance tracker..." :
                       appMode === 'jira' ? "Paste your Jira ticket description or bug logs here..." :
-                        "Type your message here..."
+                        appMode === 'improver' ? "Paste your simple prompt here (e.g., write a story about a cat)..." :
+                          "Type your message here..."
                   }
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
@@ -450,14 +479,16 @@ function App() {
                   onClick={
                     appMode === 'architect' ? handleEnhance :
                       appMode === 'jira' ? handleJiraMode :
-                        handleGeneralChat
+                        appMode === 'improver' ? handleImproveMode :
+                          handleGeneralChat
                   }
                   disabled={!prompt || loading.enhance || loading.chat}
                 >
                   {(loading.enhance || loading.chat) && <span className="loading-spinner"></span>}
-                  {appMode === 'architect' ? (loading.enhance ? 'Enhancing...' : 'Generate Promt') :
+                  {appMode === 'architect' ? (loading.enhance ? 'Enhancing...' : 'Generate Prompt') :
                     appMode === 'jira' ? (loading.chat ? 'Analyzing Ticket...' : 'Analyze Ticket') :
-                      (loading.chat ? 'Thinking...' : 'Ask AI')}
+                      appMode === 'improver' ? (loading.chat ? 'Improving Prompt...' : 'Improve Prompt ✨') :
+                        (loading.chat ? 'Thinking...' : 'Ask AI')}
                 </button>
               </div>
             </section>
