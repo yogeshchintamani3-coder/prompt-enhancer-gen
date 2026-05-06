@@ -35,7 +35,7 @@ function activate(context) {
             cancellable: false
         }, async (progress) => {
             try {
-                // Use fetch (available in modern VS Code/Cursor Node environments)
+                const fetch = require('node-fetch');
                 const response = await fetch('https://prompt-enhancer-backend-vfkc.onrender.com/api/improve-prompt', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
