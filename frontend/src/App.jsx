@@ -348,6 +348,18 @@ function App() {
           ))}
         </div>
 
+        <div className="extensions-section" style={{ padding: '1rem', borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.1)' }}>
+          <p className="history-title" style={{ marginBottom: '0.75rem' }}>🔌 Extensions</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <a href="/extensions/browser-extension.zip" download className="history-item" style={{ fontSize: '0.75rem', textDecoration: 'none', color: 'inherit' }}>
+              <span className="history-icon">🌐</span> Browser Extension (.zip)
+            </a>
+            <a href="/extensions/cursor-extension.vsix" download className="history-item" style={{ fontSize: '0.75rem', textDecoration: 'none', color: 'inherit' }}>
+              <span className="history-icon">🖱️</span> Cursor Extension (.vsix)
+            </a>
+          </div>
+        </div>
+
         <div className="user-profile" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
           {!user ? (
             <GoogleLogin
