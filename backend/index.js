@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import morgan from 'morgan';
 import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 
 dotenv.config();
 
@@ -13,92 +14,171 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(morgan('dev'));
 
+// ============================================================
+// MULTI-PROVIDER AI CONFIGURATION
+// Supports: Google Gemini + OpenAI ChatGPT
+// Automatic failover: if one provider/model is busy, switches to next
+// ============================================================
+
 const GEMINI_HTTP_OPTIONS = {
     baseUrl: 'https://generativelanguage.googleapis.com',
     apiVersion: 'v1beta'
 };
 
-// --- Multi-Model Failover Configuration ---
-// Models ordered by priority: fastest/cheapest first, then fallback to more capable ones
-const AI_MODELS = [
-    { name: 'gemini-2.0-flash-lite', supportsImages: true },
-    { name: 'gemini-2.0-flash', supportsImages: true },
-    { name: 'gemini-1.5-flash', supportsImages: true },
-    { name: 'gemini-1.5-flash-8b', supportsImages: true },
-];
-
-const defaultClient = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY || '',
-    httpOptions: GEMINI_HTTP_OPTIONS
-});
-
-const getClient = (req) => {
-    const customKey = req.headers['x-api-key'];
-    if (customKey) {
-        return new GoogleGenAI({
-            apiKey: customKey,
-            httpOptions: GEMINI_HTTP_OPTIONS
-        });
+const AI_PROVIDERS = {
+    gemini: {
+        models: [
+            { name: 'gemini-2.0-flash-lite', supportsImages: true },
+            { name: 'gemini-2.0-flash', supportsImages: true },
+            { name: 'gemini-1.5-flash', supportsImages: true },
+            { name: 'gemini-1.5-flash-8b', supportsImages: true },
+        ],
+        enabled: !!process.env.GEMINI_API_KEY
+    },
+    openai: {
+        models: [
+            { name: 'gpt-4o-mini', supportsImages: true },
+            { name: 'gpt-4o', supportsImages: true },
+            { name: 'gpt-3.5-turbo', supportsImages: false },
+        ],
+        enabled: !!process.env.OPENAI_API_KEY
     }
-    return defaultClient;
 };
 
-// --- Helper to format content with optional image ---
-const formatContents = (text, imageBase64, mimeType = 'image/png') => {
+const geminiClient = process.env.GEMINI_API_KEY
+    ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: GEMINI_HTTP_OPTIONS })
+    : null;
+
+const openaiClient = process.env.OPENAI_API_KEY
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    : null;
+
+const getGeminiClient = (req) => {
+    const customKey = req.headers['x-api-key'];
+    if (customKey) {
+        return new GoogleGenAI({ apiKey: customKey, httpOptions: GEMINI_HTTP_OPTIONS });
+    }
+    return geminiClient;
+};
+
+const getOpenAIClient = (req) => {
+    const customOpenAIKey = req.headers['x-openai-key'];
+    if (customOpenAIKey) {
+        return new OpenAI({ apiKey: customOpenAIKey });
+    }
+    return openaiClient;
+};
+
+// --- Helper: format content for Gemini ---
+const formatGeminiContents = (text, imageBase64, mimeType = 'image/png') => {
     const parts = [{ text }];
     if (imageBase64) {
         const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
         parts.push({
-            inlineData: {
-                data: cleanBase64,
-                mimeType: mimeType
-            }
+            inlineData: { data: cleanBase64, mimeType }
         });
     }
     return { contents: [{ parts }] };
 };
 
-// --- Multi-Model Failover with Retry ---
-// Tries each model in priority order. If a model is busy (429/503), it moves to the next.
-// Only retries with backoff if ALL models are busy in a single pass.
-async function callWithFailover(client, contentOptions, hasImage = false) {
-    const eligibleModels = hasImage
-        ? AI_MODELS.filter(m => m.supportsImages)
-        : AI_MODELS;
+// --- Helper: format content for OpenAI ---
+const formatOpenAIMessages = (text, imageBase64, mimeType = 'image/png') => {
+    const content = [{ type: 'text', text }];
+    if (imageBase64) {
+        const base64Url = imageBase64.startsWith('data:')
+            ? imageBase64
+            : `data:${mimeType};base64,${imageBase64}`;
+        content.push({
+            type: 'image_url',
+            image_url: { url: base64Url, detail: 'auto' }
+        });
+    }
+    return [{ role: 'user', content }];
+};
 
-    const maxPasses = 3;
-    let lastError = null;
+// --- Call Gemini Model ---
+async function callGemini(client, model, text, imageBase64, mimeType) {
+    const result = await client.models.generateContent({
+        model: model.name,
+        ...formatGeminiContents(text, imageBase64, mimeType)
+    });
+    return result.candidates[0].content.parts[0].text;
+}
+
+// --- Call OpenAI Model ---
+async function callOpenAI(client, model, text, imageBase64, mimeType) {
+    const messages = formatOpenAIMessages(text, imageBase64, mimeType);
+    const response = await client.chat.completions.create({
+        model: model.name,
+        messages,
+        max_tokens: 4096
+    });
+    return response.choices[0].message.content;
+}
+
+// --- Multi-Provider Failover Engine ---
+// Priority: Gemini models first (free/cheaper), then OpenAI as fallback
+async function callWithFailover(req, text, imageBase64 = null, mimeType = 'image/png') {
+    const hasImage = !!imageBase64;
+    const errors = [];
+
+    const gemini = getGeminiClient(req);
+    const openai = getOpenAIClient(req);
+
+    // Build ordered list of attempts: [{ provider, client, model, callFn }]
+    const attempts = [];
+
+    if (gemini && AI_PROVIDERS.gemini.enabled) {
+        for (const model of AI_PROVIDERS.gemini.models) {
+            if (hasImage && !model.supportsImages) continue;
+            attempts.push({ provider: 'gemini', client: gemini, model, callFn: callGemini });
+        }
+    }
+
+    if (openai && AI_PROVIDERS.openai.enabled) {
+        for (const model of AI_PROVIDERS.openai.models) {
+            if (hasImage && !model.supportsImages) continue;
+            attempts.push({ provider: 'openai', client: openai, model, callFn: callOpenAI });
+        }
+    }
+
+    // Also accept user-provided OpenAI key even if server doesn't have one
+    if (!openai && req.headers['x-openai-key']) {
+        const userOpenAI = new OpenAI({ apiKey: req.headers['x-openai-key'] });
+        for (const model of AI_PROVIDERS.openai.models) {
+            if (hasImage && !model.supportsImages) continue;
+            attempts.push({ provider: 'openai', client: userOpenAI, model, callFn: callOpenAI });
+        }
+    }
+
+    if (attempts.length === 0) {
+        throw new Error('No AI providers configured. Set GEMINI_API_KEY or OPENAI_API_KEY.');
+    }
+
+    const maxPasses = 2;
 
     for (let pass = 0; pass < maxPasses; pass++) {
-        for (const model of eligibleModels) {
+        for (const attempt of attempts) {
             try {
-                const result = await client.models.generateContent({
-                    model: model.name,
-                    ...contentOptions
-                });
-                if (pass > 0 || model.name !== eligibleModels[0].name) {
-                    console.log(`Succeeded with fallback model: ${model.name} (pass ${pass + 1})`);
+                const result = await attempt.callFn(attempt.client, attempt.model, text, imageBase64, mimeType);
+                if (pass > 0 || attempt !== attempts[0]) {
+                    console.log(`Succeeded with ${attempt.provider}/${attempt.model.name} (pass ${pass + 1})`);
                 }
                 return result;
             } catch (error) {
-                const status = error.status || error.httpStatusCode;
+                const status = error.status || error.httpStatusCode || error.code;
                 const errorMessage = error.message || '';
 
-                if (errorMessage.includes('location is not supported')) {
-                    console.warn(`Model ${model.name} not available in this region, trying next...`);
-                    lastError = error;
-                    continue;
-                }
+                const isRetryable =
+                    status === 429 || status === 503 || status === 500 ||
+                    errorMessage.includes('location is not supported') ||
+                    errorMessage.includes('overloaded') ||
+                    errorMessage.includes('rate_limit') ||
+                    errorMessage.includes('capacity');
 
-                if (status === 429 || status === 503) {
-                    console.warn(`Model ${model.name} is busy (${status}), trying next model...`);
-                    lastError = error;
-                    continue;
-                }
-
-                if (status === 404) {
-                    console.warn(`Model ${model.name} not found, trying next...`);
-                    lastError = error;
+                if (isRetryable || status === 404) {
+                    console.warn(`[${attempt.provider}/${attempt.model.name}] Failed (${status || 'error'}): ${errorMessage.slice(0, 100)}`);
+                    errors.push({ provider: attempt.provider, model: attempt.model.name, error: errorMessage });
                     continue;
                 }
 
@@ -107,16 +187,17 @@ async function callWithFailover(client, contentOptions, hasImage = false) {
         }
 
         if (pass < maxPasses - 1) {
-            const delay = 2000 * Math.pow(2, pass);
+            const delay = 3000;
             console.log(`All models busy. Waiting ${delay}ms before pass ${pass + 2}/${maxPasses}...`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
 
-    if (lastError?.message?.includes('location is not supported')) {
+    const locationError = errors.find(e => e.error.includes('location is not supported'));
+    if (locationError && errors.every(e => e.error.includes('location'))) {
         throw new Error(
-            'The AI service is not available in the current server region. ' +
-            'Please try using your own Gemini API key via the settings, or try again later.'
+            'AI service not available in the current server region. ' +
+            'Please provide your own API key in settings.'
         );
     }
 
@@ -124,7 +205,10 @@ async function callWithFailover(client, contentOptions, hasImage = false) {
 }
 
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', models: AI_MODELS.map(m => m.name) });
+    const providers = {};
+    if (AI_PROVIDERS.gemini.enabled) providers.gemini = AI_PROVIDERS.gemini.models.map(m => m.name);
+    if (AI_PROVIDERS.openai.enabled) providers.openai = AI_PROVIDERS.openai.models.map(m => m.name);
+    res.json({ status: 'ok', providers });
 });
 
 app.post('/api/enhance-prompt', async (req, res) => {
@@ -152,12 +236,7 @@ app.post('/api/enhance-prompt', async (req, res) => {
             
             Return ONLY the enhanced prompt in plain text format (do NOT use markdown symbols like ** or #). Keep it highly readable using clear spacing, capital letters for headers, and standard bullet points.`;
 
-        const result = await callWithFailover(
-            getClient(req),
-            formatContents(text, image, mimeType),
-            !!image
-        );
-        const responseText = result.candidates[0].content.parts[0].text;
+        const responseText = await callWithFailover(req, text, image, mimeType);
         res.json({ enhancedPrompt: responseText });
     } catch (error) {
         console.error('Enhancement error:', error);
@@ -195,13 +274,7 @@ app.post('/api/generate-project', async (req, res) => {
             
             Format the response as a valid JSON object. Do not include markdown code blocks around the JSON.`;
 
-        const result = await callWithFailover(
-            getClient(req),
-            formatContents(text, image, mimeType),
-            !!image
-        );
-        
-        let responseText = result.candidates[0].content.parts[0].text;
+        let responseText = await callWithFailover(req, text, image, mimeType);
         responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         
         const projectData = JSON.parse(responseText);
@@ -217,12 +290,8 @@ app.post('/api/translate-prompt', async (req, res) => {
     if (!prompt || !targetLanguage) return res.status(400).json({ error: 'Prompt and target language are required' });
 
     try {
-        const result = await callWithFailover(
-            getClient(req),
-            { contents: `Translate the following project prompt into ${targetLanguage}. Keep the technical terms accurate but make it sound natural in the target language.\n\nPrompt: ${prompt}\n\nReturn ONLY the translated text.` },
-            false
-        );
-        const translatedText = result.candidates[0].content.parts[0].text;
+        const translateText = `Translate the following project prompt into ${targetLanguage}. Keep the technical terms accurate but make it sound natural in the target language.\n\nPrompt: ${prompt}\n\nReturn ONLY the translated text.`;
+        const translatedText = await callWithFailover(req, translateText);
         res.json({ translatedText });
     } catch (error) {
         console.error('Translation error:', error);
@@ -235,12 +304,7 @@ app.post('/api/general-chat', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     try {
-        const result = await callWithFailover(
-            getClient(req),
-            formatContents(prompt, image, mimeType),
-            !!image
-        );
-        const responseText = result.candidates[0].content.parts[0].text;
+        const responseText = await callWithFailover(req, prompt, image, mimeType);
         res.json({ response: responseText });
     } catch (error) {
         console.error('Chat error:', error);
@@ -253,7 +317,7 @@ app.post('/api/improve-prompt', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     try {
-        const improveContents = `You are a world-class Prompt Engineer. 
+        const improveText = `You are a world-class Prompt Engineer. 
             Take the following simple one-liner or basic prompt and transform it into a "Master Prompt".
             
             The Master Prompt should follow the RTFC framework:
@@ -266,12 +330,7 @@ app.post('/api/improve-prompt', async (req, res) => {
             
             Return ONLY the improved Master Prompt in plain text format (do NOT use markdown symbols like ** or #). Keep it highly readable using clear spacing, capital letters for headers, and standard bullet points.`;
 
-        const result = await callWithFailover(
-            getClient(req),
-            { contents: improveContents },
-            false
-        );
-        const responseText = result.candidates[0].content.parts[0].text;
+        const responseText = await callWithFailover(req, improveText);
         res.json({ improvedPrompt: responseText });
     } catch (error) {
         console.error('Improvement error:', error);
@@ -284,7 +343,7 @@ app.post('/api/jira-prompt', async (req, res) => {
     if (!ticketDetails) return res.status(400).json({ error: 'Ticket details are required' });
 
     try {
-        const jiraContents = `You are an expert Senior Software Engineer and Tech Lead. 
+        const jiraText = `You are an expert Senior Software Engineer and Tech Lead. 
             Analyze the following Jira ticket description or bug report.
             
             Your task: Create a comprehensive "Bug Fix Execution Prompt" that a developer can use to immediately understand and solve the issue.
@@ -300,12 +359,7 @@ app.post('/api/jira-prompt', async (req, res) => {
             
             Return ONLY the structured response in plain text format (do NOT use markdown symbols like ** or #). Keep it highly readable using clear spacing, capital letters for headers, and standard bullet points.`;
 
-        const result = await callWithFailover(
-            getClient(req),
-            { contents: jiraContents },
-            false
-        );
-        const responseText = result.candidates[0].content.parts[0].text;
+        const responseText = await callWithFailover(req, jiraText);
         res.json({ enhancedPrompt: responseText });
     } catch (error) {
         console.error('Jira processing error:', error);
