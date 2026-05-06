@@ -117,7 +117,8 @@ async function callOpenAI(client, model, text, imageBase64, mimeType) {
 }
 
 // --- Multi-Provider Failover Engine ---
-// Priority: Gemini models first (free/cheaper), then OpenAI as fallback
+// Priority: Gemini models first (free/cheaper), then OpenAI as fallback.
+// ANY failure on one model/provider automatically moves to the next — never stops early.
 async function callWithFailover(req, text, imageBase64 = null, mimeType = 'image/png') {
     const hasImage = !!imageBase64;
     const errors = [];
@@ -125,34 +126,45 @@ async function callWithFailover(req, text, imageBase64 = null, mimeType = 'image
     const gemini = getGeminiClient(req);
     const openai = getOpenAIClient(req);
 
-    // Build ordered list of attempts: [{ provider, client, model, callFn }]
     const attempts = [];
 
-    if (gemini && AI_PROVIDERS.gemini.enabled) {
+    // Add Gemini models (even if client has a key issue, we try and let it fail gracefully)
+    if (gemini) {
         for (const model of AI_PROVIDERS.gemini.models) {
             if (hasImage && !model.supportsImages) continue;
             attempts.push({ provider: 'gemini', client: gemini, model, callFn: callGemini });
         }
     }
 
-    if (openai && AI_PROVIDERS.openai.enabled) {
+    // Add OpenAI models from server key
+    if (openai) {
         for (const model of AI_PROVIDERS.openai.models) {
             if (hasImage && !model.supportsImages) continue;
             attempts.push({ provider: 'openai', client: openai, model, callFn: callOpenAI });
         }
     }
 
-    // Also accept user-provided OpenAI key even if server doesn't have one
-    if (!openai && req.headers['x-openai-key']) {
+    // Add OpenAI models from user-provided key (works even without server key)
+    if (req.headers['x-openai-key']) {
         const userOpenAI = new OpenAI({ apiKey: req.headers['x-openai-key'] });
         for (const model of AI_PROVIDERS.openai.models) {
             if (hasImage && !model.supportsImages) continue;
+            if (openai) continue; // skip if server already has openai (avoid duplicates)
             attempts.push({ provider: 'openai', client: userOpenAI, model, callFn: callOpenAI });
         }
     }
 
+    // Add Gemini from user-provided key as extra fallback
+    if (req.headers['x-api-key'] && !gemini) {
+        const userGemini = new GoogleGenAI({ apiKey: req.headers['x-api-key'], httpOptions: GEMINI_HTTP_OPTIONS });
+        for (const model of AI_PROVIDERS.gemini.models) {
+            if (hasImage && !model.supportsImages) continue;
+            attempts.push({ provider: 'gemini', client: userGemini, model, callFn: callGemini });
+        }
+    }
+
     if (attempts.length === 0) {
-        throw new Error('No AI providers configured. Set GEMINI_API_KEY or OPENAI_API_KEY.');
+        throw new Error('No AI providers configured. Set GEMINI_API_KEY or OPENAI_API_KEY environment variable on the server.');
     }
 
     const maxPasses = 2;
@@ -162,46 +174,44 @@ async function callWithFailover(req, text, imageBase64 = null, mimeType = 'image
             try {
                 const result = await attempt.callFn(attempt.client, attempt.model, text, imageBase64, mimeType);
                 if (pass > 0 || attempt !== attempts[0]) {
-                    console.log(`Succeeded with ${attempt.provider}/${attempt.model.name} (pass ${pass + 1})`);
+                    console.log(`[FAILOVER] Succeeded with ${attempt.provider}/${attempt.model.name} (pass ${pass + 1})`);
                 }
                 return result;
             } catch (error) {
                 const status = error.status || error.httpStatusCode || error.code;
                 const errorMessage = error.message || '';
-
-                const isRetryable =
-                    status === 429 || status === 503 || status === 500 ||
-                    errorMessage.includes('location is not supported') ||
-                    errorMessage.includes('overloaded') ||
-                    errorMessage.includes('rate_limit') ||
-                    errorMessage.includes('capacity');
-
-                if (isRetryable || status === 404) {
-                    console.warn(`[${attempt.provider}/${attempt.model.name}] Failed (${status || 'error'}): ${errorMessage.slice(0, 100)}`);
-                    errors.push({ provider: attempt.provider, model: attempt.model.name, error: errorMessage });
-                    continue;
-                }
-
-                throw error;
+                console.warn(`[${attempt.provider}/${attempt.model.name}] Failed (${status || 'unknown'}): ${errorMessage.slice(0, 150)}`);
+                errors.push({ provider: attempt.provider, model: attempt.model.name, status, error: errorMessage });
+                // ALWAYS continue to next model — never throw here
+                continue;
             }
         }
 
         if (pass < maxPasses - 1) {
             const delay = 3000;
-            console.log(`All models busy. Waiting ${delay}ms before pass ${pass + 2}/${maxPasses}...`);
+            console.log(`All models failed in pass ${pass + 1}. Waiting ${delay}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
 
-    const locationError = errors.find(e => e.error.includes('location is not supported'));
-    if (locationError && errors.every(e => e.error.includes('location'))) {
+    // All attempts exhausted — provide a meaningful error
+    const allLocationErrors = errors.length > 0 && errors.every(e => e.error.includes('location'));
+    if (allLocationErrors) {
         throw new Error(
             'AI service not available in the current server region. ' +
             'Please provide your own API key in settings.'
         );
     }
 
-    throw new Error('All AI models are currently busy. Please try again in a moment.');
+    const allAuthErrors = errors.length > 0 && errors.every(e => e.status === 401 || e.status === 403);
+    if (allAuthErrors) {
+        throw new Error('AI API key is invalid or expired. Please check your API key configuration.');
+    }
+
+    const lastError = errors[errors.length - 1];
+    throw new Error(
+        `All AI models failed after ${maxPasses} passes. Last error: ${lastError?.error?.slice(0, 100) || 'Unknown'}. Please try again.`
+    );
 }
 
 app.get('/api/health', (req, res) => {
