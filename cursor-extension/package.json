@@ -1,37 +1,56 @@
 {
   "name": "prompt-enhancer-cursor",
   "displayName": "AI Prompt Enhancer",
-  "description": "Enhances your prompts directly within Cursor using your AI backend.",
-  "version": "1.0.0",
+  "description": "Transform any simple idea into a Master Prompt — directly inside Cursor. Supports Google Sign-in & personal API keys.",
+  "version": "2.0.0",
   "publisher": "prompt-enhancer-ai",
   "icon": "logo.png",
   "engines": {
     "vscode": "^1.80.0"
   },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "*"
-  ],
+  "categories": ["Other"],
+  "keywords": ["prompt", "ai", "gemini", "cursor", "chatgpt", "prompt engineering"],
+  "activationEvents": ["*"],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
         "command": "prompt-enhancer.enhance",
-        "title": "Prompt Enhancer: Enhance Selection"
+        "title": "Prompt Enhancer: Enhance Selection",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "prompt-enhancer.settings",
+        "title": "Prompt Enhancer: Settings & API Key",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
       "editor/context": [
         {
           "command": "prompt-enhancer.enhance",
-          "group": "modification"
+          "group": "modification",
+          "when": "editorHasSelection"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "prompt-enhancer.settings",
+          "group": "navigation"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "prompt-enhancer.enhance",
+        "key": "ctrl+shift+p ctrl+shift+e",
+        "mac": "cmd+shift+p cmd+shift+e",
+        "when": "editorTextFocus"
+      }
+    ]
   },
-  "dependencies": {
-    "node-fetch": "^2.7.0"
+  "dependencies": {},
+  "devDependencies": {
+    "@vscode/vsce": "^3.0.0"
   }
 }
