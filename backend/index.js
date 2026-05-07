@@ -349,18 +349,39 @@ app.post('/api/improve-prompt', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     try {
-        const improveText = `You are a world-class Prompt Engineer. 
-            Take the following simple one-liner or basic prompt and transform it into a "Master Prompt".
-            
-            The Master Prompt should follow the RTFC framework:
-            1. **Role**: Assign a specific persona or expert role.
-            2. **Task**: Clearly define the objective.
-            3. **Format**: Specify the desired output structure (Markdown, Table, etc.).
-            4. **Constraints/Context**: Add quality requirements, tone, and what to avoid.
-            
-            Simple Prompt: ${prompt}
-            
-            Return ONLY the improved Master Prompt in plain text format (do NOT use markdown symbols like ** or #). Keep it highly readable using clear spacing, capital letters for headers, and standard bullet points.`;
+        const improveText = `You are a world-class Prompt Engineer specializing in crafting precise, high-impact AI prompts.
+
+Your task is to transform the following simple prompt into a detailed "Master Prompt" that gets exceptional results from any AI model.
+
+SIMPLE PROMPT:
+${prompt}
+
+OUTPUT FORMAT — write the Master Prompt using EXACTLY these section headers (plain text, no markdown symbols like ** or #):
+
+ROLE
+[Define a specific expert persona the AI should adopt]
+
+TASK
+[State the precise objective with concrete deliverables]
+
+CONTEXT
+[Provide background, constraints, target audience, and any assumptions]
+
+OUTPUT FORMAT
+[Specify the exact structure, length, and style of the AI's response]
+
+QUALITY REQUIREMENTS
+[List 3-5 specific standards the output must meet]
+
+WHAT TO AVOID
+[List common pitfalls or things the AI should NOT do]
+
+Rules for your response:
+- Write ONLY the Master Prompt text — do not include any meta-commentary, explanations, or preamble.
+- Do NOT use markdown symbols (**, ##, __, etc.) anywhere.
+- Use capital letters for the section headers as shown above.
+- Keep each section concise but specific to the user's actual prompt topic.
+- The Master Prompt must be directly usable by pasting into any AI chat.`;
 
         const responseText = await callWithFailover(req, improveText);
         res.json({ improvedPrompt: responseText });
